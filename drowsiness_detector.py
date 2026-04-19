@@ -1,8 +1,13 @@
+import io
+import threading
+import time
+
 import cv2
 import mediapipe as mp
 import numpy as np
 import simpleaudio as sa
 from scipy.spatial import distance
+
 
 def eye_aspect_ratio(eye):
     # compute the euclidean distances between the two sets of
@@ -51,83 +56,132 @@ def draw_eye_contour(frame, coords, color):
     for (x, y) in coords:
         cv2.circle(frame, (x, y), 2, color, -1)
 
-# Initialize MediaPipe Face Mesh
-mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(max_num_faces=1, refine_landmarks=True, min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
-# Eye landmark indices for left and right eyes
-LEFT_EYE = [33, 160, 158, 133, 153, 144]
-RIGHT_EYE = [263, 387, 385, 362, 380, 373]
+class DrowsinessDetector:
+    def __init__(self, webcam_index=0):
+        self.mp_face_mesh = mp.solutions.face_mesh
+        self.face_mesh = self.mp_face_mesh.FaceMesh(
+            max_num_faces=1,
+            refine_landmarks=True,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5,
+        )
+        self.left_eye_indices = [33, 160, 158, 133, 153, 144]
+        self.right_eye_indices = [263, 387, 385, 362, 380, 373]
+        self.EYE_AR_THRESH = 0.22
+        self.EYE_AR_CONSEC_FRAMES = 50  # about 2.5 seconds at 20fps for fully closed eyes
+        self.counter = 0
+        self.alert_sound = create_beep_wave(frequency=880, duration=0.35, volume=0.4)
+        self.camera_index = webcam_index
+        self.capture = None
+        self.frame = None
+        self.running = False
+        self.alert_active = False
+        self.current_ear = 0.0
+        self.lock = threading.Lock()
+        self.thread = None
 
-# Thresholds
-EYE_AR_THRESH = 0.25
-EYE_AR_CONSEC_FRAMES = 15  # about 0.5-1 second at 24fps
+    def start(self):
+        if self.running:
+            return
+        self.running = True
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
 
-COUNTER = 0
-ALERT_SOUND = create_beep_wave(frequency=880, duration=0.35, volume=0.4)
+    def stop(self):
+        self.running = False
+        if self.thread:
+            self.thread.join(timeout=2.0)
+            self.thread = None
+        if self.capture is not None:
+            self.capture.release()
+            self.capture = None
 
-cap = cv2.VideoCapture(0)
+    def _run(self):
+        self.capture = cv2.VideoCapture(self.camera_index)
+        if not self.capture.isOpened():
+            self.running = False
+            return
 
-if not cap.isOpened():
-    print("Error: Could not open webcam. Please check camera permissions in System Settings > Privacy & Security > Camera.")
-    print("Make sure to allow access for Terminal or your code editor.")
-    exit(1)
+        while self.running:
+            ret, frame = self.capture.read()
+            if not ret:
+                time.sleep(0.1)
+                continue
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
+            frame = cv2.flip(frame, 1)
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = self.face_mesh.process(rgb_frame)
 
-    # Flip the frame horizontally for a selfie-view display
-    frame = cv2.flip(frame, 1)
+            if results.multi_face_landmarks:
+                face_landmarks = results.multi_face_landmarks[0]
+                landmarks = face_landmarks.landmark
+                left_eye_coords = self._get_eye_coords(landmarks, self.left_eye_indices, frame)
+                right_eye_coords = self._get_eye_coords(landmarks, self.right_eye_indices, frame)
+                leftEAR = eye_aspect_ratio(left_eye_coords)
+                rightEAR = eye_aspect_ratio(right_eye_coords)
+                ear = (leftEAR + rightEAR) / 2.0
 
-    # Convert to RGB
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                with self.lock:
+                    self.current_ear = ear
+                    if ear < self.EYE_AR_THRESH:
+                        self.counter += 1
+                        if self.counter >= self.EYE_AR_CONSEC_FRAMES and not self.alert_active:
+                            self.alert_active = True
+                            play_alert(self.alert_sound)
+                    else:
+                        self.counter = 0
+                        self.alert_active = False
 
-    # Process the frame with MediaPipe Face Mesh
-    results = face_mesh.process(rgb_frame)
-
-    if results.multi_face_landmarks:
-        for face_landmarks in results.multi_face_landmarks:
-            landmarks = face_landmarks.landmark
-
-            # Get left eye coordinates
-            left_eye_coords = []
-            for i in LEFT_EYE:
-                lm = landmarks[i]
-                x = int(lm.x * frame.shape[1])
-                y = int(lm.y * frame.shape[0])
-                left_eye_coords.append((x, y))
-
-            # Get right eye coordinates
-            right_eye_coords = []
-            for i in RIGHT_EYE:
-                lm = landmarks[i]
-                x = int(lm.x * frame.shape[1])
-                y = int(lm.y * frame.shape[0])
-                right_eye_coords.append((x, y))
-
-            # Calculate EAR
-            leftEAR = eye_aspect_ratio(left_eye_coords)
-            rightEAR = eye_aspect_ratio(right_eye_coords)
-            ear = (leftEAR + rightEAR) / 2.0
-
-            alert_active = False
-            if ear < EYE_AR_THRESH:
-                COUNTER += 1
-                if COUNTER >= EYE_AR_CONSEC_FRAMES:
-                    alert_active = True
-                    play_alert(ALERT_SOUND)
+                draw_status_overlay(frame, ear, self.counter, self.alert_active)
+                draw_eye_contour(frame, left_eye_coords, (0, 255, 0))
+                draw_eye_contour(frame, right_eye_coords, (0, 255, 0))
             else:
-                COUNTER = 0
+                with self.lock:
+                    self.current_ear = 0.0
+                    self.counter = 0
+                    self.alert_active = False
 
-            draw_status_overlay(frame, ear, COUNTER, alert_active)
-            draw_eye_contour(frame, left_eye_coords, (0, 255, 0))
-            draw_eye_contour(frame, right_eye_coords, (0, 255, 0))
+            with self.lock:
+                self.frame = frame
 
-    cv2.imshow("Frame", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+            time.sleep(0.05)
 
-cap.release()
-cv2.destroyAllWindows()
+    def _get_eye_coords(self, landmarks, indices, frame):
+        coords = []
+        for i in indices:
+            lm = landmarks[i]
+            x = int(lm.x * frame.shape[1])
+            y = int(lm.y * frame.shape[0])
+            coords.append((x, y))
+        return coords
+
+    def get_status(self):
+        with self.lock:
+            return {
+                "running": self.running,
+                "ear": float(self.current_ear),
+                "alert": bool(self.alert_active),
+                "closed_frames": int(self.counter),
+            }
+
+    def get_snapshot(self):
+        with self.lock:
+            if self.frame is None:
+                return None
+            success, jpeg = cv2.imencode('.jpg', self.frame)
+            return jpeg.tobytes() if success else None
+
+
+def main():
+    detector = DrowsinessDetector()
+    detector.start()
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        detector.stop()
+
+
+if __name__ == "__main__":
+    main()

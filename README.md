@@ -19,9 +19,21 @@ This is an end-to-end computer vision project to detect drowsiness in real-time 
 4. Install dependencies: `pip install -r requirements.txt`
 
 ## Usage
-Run the script: `python drowsiness_detector.py`
+Run the desktop script: `python drowsiness_detector.py`
 
 Press 'q' to quit.
+
+## API Service
+1. Install dependencies: `pip install -r requirements.txt`
+2. Start the API: `python app.py`
+3. Open `http://localhost:8000/docs` for auto-generated API documentation
+
+Available endpoints:
+- `GET /health` — service health
+- `GET /status` — current EAR, alert state, and closed-frame counter
+- `POST /start` — start webcam monitoring
+- `POST /stop` — stop webcam monitoring
+- `GET /snapshot` — current annotated frame as JPEG
 
 ## How it works
 - Detects faces in the video stream using MediaPipe Face Mesh
