@@ -63,23 +63,26 @@ class DrowsinessDetector:
         self.face_mesh = self.mp_face_mesh.FaceMesh(
             max_num_faces=1,
             refine_landmarks=True,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5,
+            min_detection_confidence=0.4,
+            min_tracking_confidence=0.4,
         )
         self.left_eye_indices = [33, 160, 158, 133, 153, 144]
         self.right_eye_indices = [263, 387, 385, 362, 380, 373]
         self.EYE_AR_THRESH = 0.22
-        self.EYE_AR_CONSEC_FRAMES = 50  # about 2.5 seconds at 20fps for fully closed eyes
+        self.EYE_AR_CONSEC_FRAMES = 30  # 1.5 seconds for faster alert
         self.counter = 0
-        self.alert_sound = create_beep_wave(frequency=880, duration=0.35, volume=0.4)
+        self.alert_sound = create_beep_wave(frequency=880, duration=0.2, volume=0.5)
         self.camera_index = webcam_index
         self.capture = None
         self.frame = None
+        self.display_frame = None
         self.running = False
         self.alert_active = False
         self.current_ear = 0.0
         self.lock = threading.Lock()
         self.thread = None
+        self.input_width = 640
+        self.input_height = 480
 
     def start(self):
         if self.running:
@@ -98,15 +101,23 @@ class DrowsinessDetector:
             self.capture = None
 
     def _run(self):
+        print(f"[DEBUG] Attempting to open camera at index: {self.camera_index}")
         self.capture = cv2.VideoCapture(self.camera_index)
         if not self.capture.isOpened():
+            print(f"[ERROR] Failed to open camera at index {self.camera_index}")
             self.running = False
             return
+        
+        # Set camera resolution for performance
+        self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.input_width)
+        self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.input_height)
+        self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        print(f"[DEBUG] Camera opened successfully at {self.input_width}x{self.input_height}")
 
         while self.running:
             ret, frame = self.capture.read()
             if not ret:
-                time.sleep(0.1)
+                time.sleep(0.05)
                 continue
 
             frame = cv2.flip(frame, 1)
@@ -126,9 +137,10 @@ class DrowsinessDetector:
                     self.current_ear = ear
                     if ear < self.EYE_AR_THRESH:
                         self.counter += 1
-                        if self.counter >= self.EYE_AR_CONSEC_FRAMES and not self.alert_active:
+                        # Alert when threshold is reached and play continuously while closed
+                        if self.counter >= self.EYE_AR_CONSEC_FRAMES:
                             self.alert_active = True
-                            play_alert(self.alert_sound)
+                            play_alert(self.alert_sound)  # Play every frame for nonstop alert
                     else:
                         self.counter = 0
                         self.alert_active = False
@@ -143,9 +155,7 @@ class DrowsinessDetector:
                     self.alert_active = False
 
             with self.lock:
-                self.frame = frame
-
-            time.sleep(0.05)
+                self.display_frame = frame
 
     def _get_eye_coords(self, landmarks, indices, frame):
         coords = []
@@ -167,9 +177,10 @@ class DrowsinessDetector:
 
     def get_snapshot(self):
         with self.lock:
-            if self.frame is None:
+            if self.display_frame is None:
                 return None
-            success, jpeg = cv2.imencode('.jpg', self.frame)
+            # Ultra-low JPEG quality (40) for fastest encoding
+            success, jpeg = cv2.imencode('.jpg', self.display_frame, [cv2.IMWRITE_JPEG_QUALITY, 40])
             return jpeg.tobytes() if success else None
 
 

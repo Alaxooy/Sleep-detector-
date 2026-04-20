@@ -326,8 +326,8 @@ async def home():
           refreshSnapshot();
         }
 
-        setInterval(updateStatus, 1000);
-        setInterval(refreshSnapshot, 1500);
+        setInterval(updateStatus, 500);
+        setInterval(refreshSnapshot, 100);
         updateStatus();
       </script>
     </body>
