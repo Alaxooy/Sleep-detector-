@@ -6,7 +6,11 @@ This is an end-to-end computer vision project to detect drowsiness in real-time 
 - Real-time video processing from webcam
 - Face and eye detection using MediaPipe
 - Eye Aspect Ratio (EAR) calculation
-- Drowsiness alert when eyes are closed for too long
+- **Continuous eye tracking** with optimized performance
+- **Nonstop audio alerts** when drowsiness is detected
+- **Zero-lag camera feed** with 640x480 resolution
+- **Real-time dashboard** with live status updates
+- Drowsiness alert when eyes are closed for 1.5 seconds
 
 ## Requirements
 - Python 3.8+
