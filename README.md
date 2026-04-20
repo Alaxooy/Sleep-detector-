@@ -39,6 +39,35 @@ Available endpoints:
 - `POST /stop` — stop webcam monitoring
 - `GET /snapshot` — current annotated frame as JPEG
 
+## Docker Deployment
+To run the application in a Docker container for an end-to-end setup:
+
+1. Ensure Docker is installed on your system.
+2. Build and run the container:
+   ```bash
+   docker-compose up --build
+   ```
+3. Access the API at `http://localhost:8000/docs`
+
+**Note on Webcam Access:**
+- On Linux: Uncomment the `devices` section in `docker-compose.yml` to allow webcam access.
+- On macOS: Webcam access in Docker containers is limited. You may need to run the app natively or use alternative setups like host networking. The API will still run, but webcam functionality may not work inside the container.
+
+## Docker Deployment
+To run the application in a Docker container for an end-to-end setup:
+
+1. Ensure Docker is installed on your system.
+2. Build and run the container:
+   ```bash
+   docker-compose up --build
+   ```
+3. Access the API at `http://localhost:8000/docs`
+
+**Note on Webcam Access:**
+- On Linux: Uncomment the `devices` section in `docker-compose.yml` to allow webcam access.
+- On macOS: Webcam access in Docker containers is limited. You may need to run the app natively or use alternative setups like host networking. The API will still run, but webcam functionality may not work inside the container.
+
+
 ## How it works
 - Detects faces in the video stream using MediaPipe Face Mesh
 - Identifies eye landmarks

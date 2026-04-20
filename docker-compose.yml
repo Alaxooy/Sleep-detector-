@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  drowsiness-detector:
+    build: .
+    ports:
+      - "8000:8000"
+    # For webcam access on Linux, uncomment the following:
+    # devices:
+    #   - /dev/video0:/dev/video0
+    # For macOS, webcam access requires additional setup or host mode
+    environment:
+      - PYTHONUNBUFFERED=1
